@@ -13,5 +13,5 @@ vet: fmt
 .PHONY:vet
 
 build: vet
-	go build ground_control.go
+	go build -tags rfm69 ground_control.go messages.go rfm69.go
 .PHONY:build

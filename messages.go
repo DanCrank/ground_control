@@ -5,32 +5,130 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
+
+	"github.com/ecc1/rfm69"
 )
 
-const ACK_TIMEOUT uint = 1000 // millis to wait for an ack meg
-const MSG_DELAY uint = 100    // millis to wait between Rx and Tx, to give the other side time to switch from Tx to Rx
-const LISTEN_DELAY uint = 50  // millis to wait between checks of the receive buffer when receiving
-const USE_ENCRYPTION bool = true
+const useEncryption bool = true
 
-// message IDs for serialization
-const MESSAGE_TELEMETRY uint8 = 0
-const MESSAGE_TELEMETRY_ACK uint8 = 1
-const MESSAGE_COMMAND_READY uint8 = 2
-const MESSAGE_COMMAND uint8 = 3
-const MESSAGE_COMMAND_ACK uint8 = 4
+// message types for serialization
+const messageTypeTelemetry byte = 0
+const messageTypeTelemetryAck byte = 1
+const messageTypeCommandReady byte = 2
+const messageTypeCommand byte = 3
+const messageTypeCommandAck byte = 4
+const messageTypeNone byte = 255
+
+func getMessageType(messageType byte) string {
+	switch messageType {
+	case messageTypeTelemetry:
+		return "TELEMETRY"
+	case messageTypeTelemetryAck:
+		return "TELEMETRY_ACK"
+	case messageTypeCommandReady:
+		return "COMMAND_READY"
+	case messageTypeCommand:
+		return "COMMAND"
+	case messageTypeCommandAck:
+		return "COMMAND_ACK"
+	default:
+		return "UNKNOWN"
+	}
+}
 
 // serialization / deserialization code on this end currently assumes that we will have
 // five extra header bytes on the head of the payload that we need to (for the moment)
 // ignore. RadioHead invisibly deals with these on the rover end but the rfm69 library
-// we use on this end does not take them back off. the first byte is the total payload
-// length (including the five header bytes) and the next four are TO, FROM, ID, FLAGS
-// currently hardcoded to vec![0xff, 0xff, 0x00, 0x00]
+// we use on this end does not. the first byte is the total payload length (including
+// the five header bytes) and the next four are TO, FROM, ID, FLAGS currently hardcoded
+// to [0xff, 0xff, 0x00, 0x00]
 
-// recognizing that I could declare serialize() / deserialize() as an interface here,
-// but I'm currently not seeing a reason to.
+type sendableMessage interface {
+	serialize(buf *[]byte)
+	length() int
+}
+
+// there's no analagous ReceivableMessage interface because Go's interface semantics
+// don't allow for methods with pointer receivers.
+
+func sendMessage(r rfm69.Radio, messageType byte, message sendableMessage) error {
+	maxMessageLength := 255
+	if useEncryption {
+		maxMessageLength = 64
+	}
+	messageLength := message.length() + 6
+	if messageLength > maxMessageLength {
+		return fmt.Errorf("Could not send %s message, too long (%d bytes)", getMessageType(messageType), messageLength)
+	}
+	var buf []byte
+	// payload length
+	buf = append(buf, byte(messageLength))
+	// static (for now) header bytes
+	buf = append(buf, 0xff, 0xff, 0x00, 0x00)
+	// message type
+	buf = append(buf, messageType)
+	// now the message
+	message.serialize(&buf)
+	// send it
+	r.Send(buf)
+	return nil
+}
+
+func receiveMessage(r rfm69.Radio, timeout time.Duration) (byte, []byte, int, error) { // messageType, messageBuf, rssi, error
+	// receive a packet
+	buf, rssi := r.Receive(timeout)
+	if buf == nil {
+		return messageTypeNone, nil, 0, nil
+	}
+	// throw away the 5 header bytes
+	// get the message type
+	messageType := buf[5]
+	// the rest is the message
+	messageBuf := buf[6:]
+	return messageType, messageBuf, rssi, nil
+}
+
+// because there's no ReceivableMessage interface (see above), the caller needs to switch
+// on messageType and call the corresponding receiveFooMessage() function:
+
+func receiveTelemetryMessage(messageBuf []byte) (telemetryMessage, error) {
+	var msg telemetryMessage
+	msg.deserialize(messageBuf)
+	return msg, nil
+}
+
+func receiveCommandReady(messageBuf []byte) (commandReady, error) {
+	var msg commandReady
+	msg.deserialize(messageBuf)
+	return msg, nil
+}
+
+func receiveCommandAck(messageBuf []byte) (commandAck, error) {
+	var msg commandAck
+	msg.deserialize(messageBuf)
+	return msg, nil
+}
 
 var serbuf4 []byte = make([]byte, 4) // temp buffers for serializing, rather than make()ing a new one each time
 var serbuf2 []byte = make([]byte, 2)
+
+// not allowing a cast from a bool to a byte is apparently the hill Go will die on
+func serializeBool(b bool) byte {
+	if b {
+		return 1
+	} else {
+		return 0
+	}
+}
+
+func deserializeBool(b byte) bool {
+	if b > 0 {
+		return true
+	} else {
+		return false
+	}
+}
 
 func serializeInt16(i int16) []byte {
 	u := uint16(i)
@@ -83,7 +181,7 @@ func deserializeString(buf []byte) string {
 	return b.String()
 }
 
-type RoverTimestamp struct {
+type roverTimestamp struct {
 	year   byte
 	month  byte
 	day    byte
@@ -92,9 +190,9 @@ type RoverTimestamp struct {
 	second byte
 }
 
-const ROVER_TIMESTAMP_SIZE int = 6
+const roverTimestampSize int = 6
 
-func (rt RoverTimestamp) serialize(buf *[]byte) {
+func (rt roverTimestamp) serialize(buf *[]byte) {
 	*buf = append(*buf, rt.year)
 	*buf = append(*buf, rt.month)
 	*buf = append(*buf, rt.day)
@@ -103,7 +201,7 @@ func (rt RoverTimestamp) serialize(buf *[]byte) {
 	*buf = append(*buf, rt.second)
 }
 
-func (rt *RoverTimestamp) deserialize(buf []byte) {
+func (rt *roverTimestamp) deserialize(buf []byte) {
 	rt.year = buf[0]
 	rt.month = buf[0]
 	rt.day = buf[0]
@@ -112,7 +210,7 @@ func (rt *RoverTimestamp) deserialize(buf []byte) {
 	rt.second = buf[0]
 }
 
-type RoverLocData struct {
+type roverLocData struct {
 	gpsLat   float32
 	gpsLong  float32
 	gpsAlt   float32
@@ -121,18 +219,9 @@ type RoverLocData struct {
 	gpsHdg   uint16
 }
 
-const ROVER_LOC_DATA_SIZE int = 19
+const roverLocDataSize int = 19
 
-func (rld RoverLocData) serialize(buf *[]byte) {
-	*buf = append(*buf, serializeFloat32(rld.gpsLat)...)
-	*buf = append(*buf, serializeFloat32(rld.gpsLong)...)
-	*buf = append(*buf, serializeFloat32(rld.gpsAlt)...)
-	*buf = append(*buf, serializeFloat32(rld.gpsSpeed)...)
-	*buf = append(*buf, rld.gpsSats)
-	*buf = append(*buf, serializeUint16(rld.gpsHdg)...)
-}
-
-func (rld *RoverLocData) deserialize(buf []byte) {
+func (rld *roverLocData) deserialize(buf []byte) {
 	rld.gpsLat = deserializeFloat32(buf[0:3])
 	rld.gpsLong = deserializeFloat32(buf[4:7])
 	rld.gpsAlt = deserializeFloat32(buf[8:11])
@@ -141,28 +230,20 @@ func (rld *RoverLocData) deserialize(buf []byte) {
 	rld.gpsHdg = deserializeUint16(buf[17:18])
 }
 
-type TelemetryMessage struct {
-	timestamp      RoverTimestamp
-	location       RoverLocData
+type telemetryMessage struct { // ReceivableMessage
+	timestamp      roverTimestamp
+	location       roverLocData
 	signalStrength int16
 	freeMemory     int16
 	status         string
 }
 
-func (tm TelemetryMessage) serialize(buf *[]byte) {
-	tm.timestamp.serialize(buf)
-	tm.location.serialize(buf)
-	*buf = append(*buf, serializeInt16(tm.signalStrength)...)
-	*buf = append(*buf, serializeInt16(tm.freeMemory)...)
-	serializeString(buf, tm.status)
-}
-
-func (tm *TelemetryMessage) deserialize(buf []byte) {
-	start := 0                  // using these to index the beginning and end of the next subslice to be deserialized
-	end := ROVER_TIMESTAMP_SIZE // to hopefully make this clearer
+func (tm *telemetryMessage) deserialize(buf []byte) {
+	start := 0                // using these to index the beginning and end of the next subslice to be deserialized
+	end := roverTimestampSize // to hopefully make this clearer
 	tm.timestamp.deserialize(buf[start : end-1])
 	start = end
-	end = start + ROVER_LOC_DATA_SIZE
+	end = start + roverLocDataSize
 	tm.location.deserialize(buf[start : end-1])
 	start = end
 	end = start + 2
@@ -174,24 +255,60 @@ func (tm *TelemetryMessage) deserialize(buf []byte) {
 	tm.status = deserializeString(buf[start:])
 }
 
-type TelemetryAck struct {
-	timestamp      RoverTimestamp
+type telemetryAck struct { // SendableMessage
+	timestamp      roverTimestamp
 	ack            bool
 	commandWaiting bool
 }
 
-type CommandReady struct {
-	timestamp RoverTimestamp
+func (ta telemetryAck) length() int {
+	return roverTimestampSize + roverLocDataSize + 1 + 1
+}
+
+func (ta telemetryAck) serialize(buf *[]byte) {
+	ta.timestamp.serialize(buf)
+	*buf = append(*buf, serializeBool(ta.ack))
+	*buf = append(*buf, serializeBool(ta.commandWaiting))
+}
+
+type commandReady struct { // ReceivableMessage
+	timestamp roverTimestamp
 	ready     bool
 }
 
-type CommandMessage struct {
-	timestamp        RoverTimestamp
+func (cr *commandReady) deserialize(buf []byte) {
+	start := 0                // using these to index the beginning and end of the next subslice to be deserialized
+	end := roverTimestampSize // to hopefully make this clearer
+	cr.timestamp.deserialize(buf[start : end-1])
+	start = end
+	cr.ready = deserializeBool(buf[start])
+}
+
+type commandMessage struct { // SendableMessage
+	timestamp        roverTimestamp
 	sequenceComplete bool
 	command          string
 }
 
-type CommandAck struct {
-	timestamp RoverTimestamp
+func (cm commandMessage) length() int {
+	return roverTimestampSize + 1 + len(cm.command) + 1
+}
+
+func (cm commandMessage) serialize(buf *[]byte) {
+	cm.timestamp.serialize(buf)
+	*buf = append(*buf, serializeBool(cm.sequenceComplete))
+	serializeString(buf, cm.command)
+}
+
+type commandAck struct { // ReceivableMessage
+	timestamp roverTimestamp
 	ack       bool
+}
+
+func (ca *commandAck) deserialize(buf []byte) {
+	start := 0                // using these to index the beginning and end of the next subslice to be deserialized
+	end := roverTimestampSize // to hopefully make this clearer
+	ca.timestamp.deserialize(buf[start : end-1])
+	start = end
+	ca.ack = deserializeBool(buf[start])
 }
