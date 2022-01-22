@@ -1,17 +1,17 @@
 .DEFAULT_GOAL := build
 
 fmt:
-	go fmt ./...
+	go fmt
 .PHONY:fmt
 
 lint: fmt
-	golint ./...
+	golint
 .PHONY:lint
 
 vet: fmt
-	go vet ./...
+	go vet
 .PHONY:vet
 
 build: vet
-	go build -tags rfm69 ground_control.go messages.go rfm69.go
+	go build
 .PHONY:build

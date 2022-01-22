@@ -11,4 +11,8 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# secret stuff
+encryption_key.go
+
 *.code-workspace
+

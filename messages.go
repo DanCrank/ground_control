@@ -3,14 +3,13 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"math"
 	"strings"
 	"time"
 
-	"github.com/ecc1/rfm69"
+	"github.com/DanCrank/devices/sx1231"
 )
-
-const useEncryption bool = true
 
 // message types for serialization
 const messageTypeTelemetry byte = 0
@@ -52,14 +51,14 @@ type sendableMessage interface {
 // there's no analagous ReceivableMessage interface because Go's interface semantics
 // don't allow for methods with pointer receivers.
 
-func sendMessage(r rfm69.Radio, messageType byte, message sendableMessage) error {
+func sendMessage(radio *sx1231.Radio, messageType byte, message sendableMessage) error {
 	maxMessageLength := 255
 	if useEncryption {
 		maxMessageLength = 64
 	}
 	messageLength := message.length() + 6
 	if messageLength > maxMessageLength {
-		return fmt.Errorf("Could not send %s message, too long (%d bytes)", getMessageType(messageType), messageLength)
+		return fmt.Errorf("could not send %s message, too long (%d bytes)", getMessageType(messageType), messageLength)
 	}
 	var buf []byte
 	// payload length
@@ -71,22 +70,22 @@ func sendMessage(r rfm69.Radio, messageType byte, message sendableMessage) error
 	// now the message
 	message.serialize(&buf)
 	// send it
-	r.Send(buf)
-	return nil
+	return radio.Transmit(buf)
 }
 
-func receiveMessage(r rfm69.Radio, timeout time.Duration) (byte, []byte, int, error) { // messageType, messageBuf, rssi, error
+func receiveMessage(radio *sx1231.Radio, timeout time.Duration) (byte, []byte, int, error) { // messageType, messageBuf, rssi, error
 	// receive a packet
-	buf, rssi := r.Receive(timeout)
-	if buf == nil {
-		return messageTypeNone, nil, 0, nil
+	packet, err := radio.Receive()
+	if err != nil {
+		log.Fatal(err)
+		return messageTypeNone, nil, 0, err
 	}
 	// throw away the 5 header bytes
 	// get the message type
-	messageType := buf[5]
+	messageType := packet.Payload[5]
 	// the rest is the message
-	messageBuf := buf[6:]
-	return messageType, messageBuf, rssi, nil
+	messageBuf := packet.Payload[6:]
+	return messageType, messageBuf, packet.Rssi, nil
 }
 
 // because there's no ReceivableMessage interface (see above), the caller needs to switch
