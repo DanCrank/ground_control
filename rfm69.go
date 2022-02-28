@@ -2,18 +2,18 @@ package main
 
 import (
 	"log"
-	"time"
 
-	"github.com/DanCrank/devices/sx1231"
-	"periph.io/x/periph/conn/gpio"
-	"periph.io/x/periph/conn/gpio/gpioreg"
-	"periph.io/x/periph/conn/spi/spireg"
+	sx1231 "github.com/DanCrank/rfm69-sx1231-rpi"
+	"periph.io/x/conn/v3/gpio"
+	"periph.io/x/conn/v3/gpio/gpioreg"
+	"periph.io/x/conn/v3/spi"
+	"periph.io/x/conn/v3/spi/spireg"
 )
 
 const frequency uint32 = 915000000
-const bitrate uint32 = 50000
+const bitrate uint32 = 9600
 const useEncryption bool = true
-const hwDelay time.Duration = 100 * time.Millisecond //generic delay to allow hardware to cope with non-root access
+
 //see: https://forum.up-community.org/discussion/2141/solved-tutorial-gpio-i2c-spi-access-without-root-permissions
 
 // define a Logprintf function to pass in RadioOpts
@@ -21,23 +21,35 @@ func logPrintf(format string, v ...interface{}) {
 	log.Printf(format, v...)
 }
 
-func initRadio() *sx1231.Radio {
-	//spiPort, err := spireg.Open("")
-	spiPort, err := spireg.Open("SPI0.0")
+func initRadio() (*sx1231.Radio, spi.PortCloser) {
+	spiPort, err := spireg.Open("/dev/spidev0.1")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer spiPort.Close()
-	time.Sleep(hwDelay)
 
-	interruptPin := gpioreg.ByName("GPIO19")
+	interruptPin := gpioreg.ByName("GPIO22")
 	if interruptPin == nil {
-		log.Fatal("Failed to find pin GPIO19 for radio interrupt")
+		log.Fatal("Failed to find pin GPIO22 for radio interrupt")
 	}
 	if err := interruptPin.In(gpio.PullDown, gpio.RisingEdge); err != nil {
 		log.Fatal(err)
 	}
-	time.Sleep(hwDelay)
+
+	csPin := gpioreg.ByName("GPIO7")
+	if csPin == nil {
+		log.Fatal("Failed to find pin GPIO7 for radio chip select")
+	}
+	if err := csPin.Out(gpio.High); err != nil {
+		log.Fatal(err)
+	}
+
+	resetPin := gpioreg.ByName("GPIO25")
+	if resetPin == nil {
+		log.Fatal("Failed to find pin GPIO25 for radio reset")
+	}
+	if err := resetPin.Out(gpio.Low); err != nil {
+		log.Fatal(err)
+	}
 
 	syncWords := syncWords()
 	radioOpts := sx1231.RadioOpts{
@@ -45,9 +57,10 @@ func initRadio() *sx1231.Radio {
 		Freq:    frequency,
 		Rate:    bitrate,
 		PABoost: true,
-		Logger:  logPrintf,
+		//Logger:  logPrintf,
+		Logger: nil,
 	}
-	radio, err := sx1231.New(spiPort, interruptPin, radioOpts)
+	radio, err := sx1231.New(spiPort, csPin, resetPin, interruptPin, radioOpts)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -55,5 +68,6 @@ func initRadio() *sx1231.Radio {
 		encryptionKey := encryptionKey()
 		radio.SetEncryptionKey(encryptionKey[:])
 	}
-	return radio
+	radio.SetPower(20)
+	return radio, spiPort
 }

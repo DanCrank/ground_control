@@ -12,7 +12,7 @@ import (
 	"periph.io/x/conn/v3/i2c/i2creg"
 	"periph.io/x/devices/v3/ssd1306"
 	"periph.io/x/devices/v3/ssd1306/image1bit"
-	"periph.io/x/periph/host"
+	"periph.io/x/host/v3"
 )
 
 const telemetryTimeout time.Duration = 10 * time.Second  // time to wait for a telemetry message from the rover
@@ -28,13 +28,16 @@ func initHost() {
 
 func testDisplay() {
 	// Use i2creg I²C bus registry to find the first available I²C bus.
-	b, err := i2creg.Open("")
+	b, err := i2creg.Open("/dev/i2c-1")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer b.Close()
 
-	dev, err := ssd1306.NewI2C(b, &ssd1306.DefaultOpts)
+	opts := ssd1306.DefaultOpts
+	opts.Sequential = true
+
+	dev, err := ssd1306.NewI2C(b, &opts)
 	if err != nil {
 		log.Fatalf("failed to initialize ssd1306: %v", err)
 	}
@@ -48,16 +51,17 @@ func testDisplay() {
 		Face: f,
 		Dot:  fixed.P(0, img.Bounds().Dy()-1-f.Descent),
 	}
-	drawer.DrawString("Hello from periph!")
-	// if err := dev.Draw(dev.Bounds(), img, image.Point{}); err != nil {
-	// 	log.Fatal(err)
-	// }
+	drawer.DrawString("GROUND STATION READY")
+	if err := dev.Draw(dev.Bounds(), img, image.Point{}); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func main() {
 	initHost()
 	testDisplay()
-	r := initRadio()
+	r, spiPort := initRadio()
+	defer spiPort.Close()
 	// main loop - receive telemetry packets
 	for {
 		msgType, buf, rssi, err := receiveMessage(r, telemetryTimeout)

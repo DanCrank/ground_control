@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DanCrank/devices/sx1231"
+	sx1231 "github.com/DanCrank/rfm69-sx1231-rpi"
 )
 
 // message types for serialization
@@ -75,16 +75,24 @@ func sendMessage(radio *sx1231.Radio, messageType byte, message sendableMessage)
 
 func receiveMessage(radio *sx1231.Radio, timeout time.Duration) (byte, []byte, int, error) { // messageType, messageBuf, rssi, error
 	// receive a packet
-	packet, err := radio.Receive()
+	//log.Printf("About to call radio.SimpleReceive() - timeout is %s", timeout)
+	packet, err := radio.SimpleReceive(timeout)
 	if err != nil {
 		log.Fatal(err)
-		return messageTypeNone, nil, 0, err
+		// return messageTypeNone, nil, 0, err
 	}
-	// throw away the 5 header bytes
+	if packet == nil {
+		log.Print("Nil packet!")
+		return messageTypeNone, nil, 0, nil
+	}
+	//log.Printf("Received a packet (%d byte payload)", len(packet.Payload))
+	//spew.Dump(packet)
+	// packet length is already stripped off the head of the buffer, so
+	// throw away the FOUR header bytes (TO, FROM, ID, FLAGS)
 	// get the message type
-	messageType := packet.Payload[5]
+	messageType := packet.Payload[4]
 	// the rest is the message
-	messageBuf := packet.Payload[6:]
+	messageBuf := packet.Payload[5:]
 	return messageType, messageBuf, packet.Rssi, nil
 }
 
@@ -175,7 +183,9 @@ func serializeString(buf *[]byte, s string) {
 func deserializeString(buf []byte) string {
 	var b strings.Builder
 	for _, r := range buf {
-		fmt.Fprint(&b, r)
+		if r > 0 {
+			fmt.Fprintf(&b, "%c", r)
+		}
 	}
 	return b.String()
 }
@@ -202,11 +212,11 @@ func (rt roverTimestamp) serialize(buf *[]byte) {
 
 func (rt *roverTimestamp) deserialize(buf []byte) {
 	rt.year = buf[0]
-	rt.month = buf[0]
-	rt.day = buf[0]
-	rt.hour = buf[0]
-	rt.minute = buf[0]
-	rt.second = buf[0]
+	rt.month = buf[1]
+	rt.day = buf[2]
+	rt.hour = buf[3]
+	rt.minute = buf[4]
+	rt.second = buf[5]
 }
 
 type roverLocData struct {
@@ -233,23 +243,23 @@ type telemetryMessage struct { // ReceivableMessage
 	timestamp      roverTimestamp
 	location       roverLocData
 	signalStrength int16
-	freeMemory     int16
+	freeMemory     uint16
 	status         string
 }
 
 func (tm *telemetryMessage) deserialize(buf []byte) {
 	start := 0                // using these to index the beginning and end of the next subslice to be deserialized
 	end := roverTimestampSize // to hopefully make this clearer
-	tm.timestamp.deserialize(buf[start : end-1])
+	tm.timestamp.deserialize(buf[start:end])
 	start = end
 	end = start + roverLocDataSize
-	tm.location.deserialize(buf[start : end-1])
+	tm.location.deserialize(buf[start:end])
 	start = end
 	end = start + 2
-	tm.signalStrength = deserializeInt16(buf[start : end-1])
+	tm.signalStrength = deserializeInt16(buf[start:end])
 	start = end
 	end = start + 2
-	tm.freeMemory = deserializeInt16(buf[start : end-1])
+	tm.freeMemory = deserializeUint16(buf[start:end])
 	start = end
 	tm.status = deserializeString(buf[start:])
 }
@@ -278,7 +288,7 @@ type commandReady struct { // ReceivableMessage
 func (cr *commandReady) deserialize(buf []byte) {
 	start := 0                // using these to index the beginning and end of the next subslice to be deserialized
 	end := roverTimestampSize // to hopefully make this clearer
-	cr.timestamp.deserialize(buf[start : end-1])
+	cr.timestamp.deserialize(buf[start:end])
 	start = end
 	cr.ready = deserializeBool(buf[start])
 }
@@ -307,7 +317,7 @@ type commandAck struct { // ReceivableMessage
 func (ca *commandAck) deserialize(buf []byte) {
 	start := 0                // using these to index the beginning and end of the next subslice to be deserialized
 	end := roverTimestampSize // to hopefully make this clearer
-	ca.timestamp.deserialize(buf[start : end-1])
+	ca.timestamp.deserialize(buf[start:end])
 	start = end
 	ca.ack = deserializeBool(buf[start])
 }
