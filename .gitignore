@@ -1,6 +1,7 @@
 # Binaries for programs and plugins
 *.so
 *.dylib
+ground_control
 
 # Test binary, built with `go test -c`
 *.test

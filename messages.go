@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/DanCrank/rfm69"
-	"github.com/davecgh/go-spew/spew"
 )
 
 // message types for serialization
@@ -40,9 +39,11 @@ func getMessageType(messageType byte) string {
 // serialization / deserialization code on this end currently assumes that we will have
 // five extra header bytes on the head of the payload that we need to (for the moment)
 // ignore. RadioHead invisibly deals with these on the rover end but the rfm69 library
-// we use on this end does not. the first byte is the total payload length (including
-// the five header bytes) and the next four are TO, FROM, ID, FLAGS currently hardcoded
-// to [0xff, 0xff, 0x00, 0x00]
+// we use on this end (currently) does not. the first byte is the total payload length
+// (including the _other_four_ header bytes but not the length byte itself) and the next
+// four are TO, FROM, ID, FLAGS currently hardcoded to [0xff, 0xff, 0x00, 0x00].
+// the SendRadioHead() function takes the flags as arguments and builds the send buffer
+// correctly, but
 
 type sendableMessage interface {
 	serialize(buf *[]byte)
@@ -59,41 +60,29 @@ func sendMessage(radio *rfm69.Radio, messageType byte, message sendableMessage) 
 		return fmt.Errorf("could not send %s message, too long (%d bytes)", getMessageType(messageType), messageLength)
 	}
 	var buf []byte
-	// payload length
-	//buf = append(buf, byte(messageLength))
-	// static (for now) header bytes
-	//buf = append(buf, 0xff, 0xff, 0x00, 0x00)
 	// message type
 	buf = append(buf, messageType)
 	// now the message
 	message.serialize(&buf)
 	// send it
-	log.Print("About to call radio.Send:")
-	spew.Dump(buf)
-	radio.Send(buf, 0xFF, 0xFF, 0x00, 0x00)
+	//spew.Dump(buf)
+	radio.SendRadioHead(buf, 0xFF, 0xFF, 0x00, 0x00)
 	return nil
 }
 
 func receiveMessage(radio *rfm69.Radio, timeout time.Duration) (byte, []byte, int, error) { // messageType, messageBuf, rssi, error
 	// receive a packet
-	log.Printf("About to call radio.Receive() - timeout is %s", timeout)
-	packet, rssi := radio.Receive(timeout)
+	packet, rssi := radio.ReceiveRadioHead(timeout)
 	if packet == nil {
 		log.Print("Nil packet!")
 		return messageTypeNone, nil, 0, nil
 	}
-	log.Printf("Received a packet (%d byte payload)", len(packet))
-	spew.Dump(packet)
-	if len(packet) < 5 {
-		log.Print("Invalid packet length - rejecting!")
-		return messageTypeNone, nil, 0, nil
-	}
-	// packet length is already stripped off the head of the buffer, so
-	// throw away the FOUR header bytes (TO, FROM, ID, FLAGS)
+	//log.Printf("Received a packet (%d byte payload)", len(packet))
+	//spew.Dump(packet)
 	// get the message type
-	messageType := packet[4]
+	messageType := packet[0]
 	// the rest is the message
-	messageBuf := packet[5:]
+	messageBuf := packet[1:]
 	return messageType, messageBuf, rssi, nil
 }
 
