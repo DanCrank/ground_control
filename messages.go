@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	sx1231 "github.com/DanCrank/rfm69-sx1231-rpi"
+	"github.com/DanCrank/rfm69"
+	"github.com/davecgh/go-spew/spew"
 )
 
 // message types for serialization
@@ -51,49 +52,49 @@ type sendableMessage interface {
 // there's no analagous ReceivableMessage interface because Go's interface semantics
 // don't allow for methods with pointer receivers.
 
-func sendMessage(radio *sx1231.Radio, messageType byte, message sendableMessage) error {
-	maxMessageLength := 255
-	if useEncryption {
-		maxMessageLength = 64
-	}
+func sendMessage(radio *rfm69.Radio, messageType byte, message sendableMessage) error {
+	maxMessageLength := 64
 	messageLength := message.length() + 6
 	if messageLength > maxMessageLength {
 		return fmt.Errorf("could not send %s message, too long (%d bytes)", getMessageType(messageType), messageLength)
 	}
 	var buf []byte
 	// payload length
-	buf = append(buf, byte(messageLength))
+	//buf = append(buf, byte(messageLength))
 	// static (for now) header bytes
-	buf = append(buf, 0xff, 0xff, 0x00, 0x00)
+	//buf = append(buf, 0xff, 0xff, 0x00, 0x00)
 	// message type
 	buf = append(buf, messageType)
 	// now the message
 	message.serialize(&buf)
 	// send it
-	return radio.Transmit(buf)
+	log.Print("About to call radio.Send:")
+	spew.Dump(buf)
+	radio.Send(buf, 0xFF, 0xFF, 0x00, 0x00)
+	return nil
 }
 
-func receiveMessage(radio *sx1231.Radio, timeout time.Duration) (byte, []byte, int, error) { // messageType, messageBuf, rssi, error
+func receiveMessage(radio *rfm69.Radio, timeout time.Duration) (byte, []byte, int, error) { // messageType, messageBuf, rssi, error
 	// receive a packet
-	//log.Printf("About to call radio.SimpleReceive() - timeout is %s", timeout)
-	packet, err := radio.SimpleReceive(timeout)
-	if err != nil {
-		log.Fatal(err)
-		// return messageTypeNone, nil, 0, err
-	}
+	log.Printf("About to call radio.Receive() - timeout is %s", timeout)
+	packet, rssi := radio.Receive(timeout)
 	if packet == nil {
 		log.Print("Nil packet!")
 		return messageTypeNone, nil, 0, nil
 	}
-	//log.Printf("Received a packet (%d byte payload)", len(packet.Payload))
-	//spew.Dump(packet)
+	log.Printf("Received a packet (%d byte payload)", len(packet))
+	spew.Dump(packet)
+	if len(packet) < 5 {
+		log.Print("Invalid packet length - rejecting!")
+		return messageTypeNone, nil, 0, nil
+	}
 	// packet length is already stripped off the head of the buffer, so
 	// throw away the FOUR header bytes (TO, FROM, ID, FLAGS)
 	// get the message type
-	messageType := packet.Payload[4]
+	messageType := packet[4]
 	// the rest is the message
-	messageBuf := packet.Payload[5:]
-	return messageType, messageBuf, packet.Rssi, nil
+	messageBuf := packet[5:]
+	return messageType, messageBuf, rssi, nil
 }
 
 // because there's no ReceivableMessage interface (see above), the caller needs to switch
@@ -231,12 +232,12 @@ type roverLocData struct {
 const roverLocDataSize int = 19
 
 func (rld *roverLocData) deserialize(buf []byte) {
-	rld.gpsLat = deserializeFloat32(buf[0:3])
-	rld.gpsLong = deserializeFloat32(buf[4:7])
-	rld.gpsAlt = deserializeFloat32(buf[8:11])
-	rld.gpsSpeed = deserializeFloat32(buf[12:15])
+	rld.gpsLat = deserializeFloat32(buf[0:4])
+	rld.gpsLong = deserializeFloat32(buf[4:8])
+	rld.gpsAlt = deserializeFloat32(buf[8:12])
+	rld.gpsSpeed = deserializeFloat32(buf[12:16])
 	rld.gpsSats = buf[16]
-	rld.gpsHdg = deserializeUint16(buf[17:18])
+	rld.gpsHdg = deserializeUint16(buf[17:])
 }
 
 type telemetryMessage struct { // ReceivableMessage

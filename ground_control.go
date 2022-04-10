@@ -27,7 +27,6 @@ func initHost() {
 }
 
 func testDisplay() {
-	// Use i2creg I²C bus registry to find the first available I²C bus.
 	b, err := i2creg.Open("/dev/i2c-1")
 	if err != nil {
 		log.Fatal(err)
@@ -60,8 +59,8 @@ func testDisplay() {
 func main() {
 	initHost()
 	testDisplay()
-	r, spiPort := initRadio()
-	defer spiPort.Close()
+	r := initRadioEcc1()
+	//defer spiPort.Close()
 	// main loop - receive telemetry packets
 	for {
 		msgType, buf, rssi, err := receiveMessage(r, telemetryTimeout)
@@ -85,6 +84,7 @@ func main() {
 				ack:            true,
 				commandWaiting: false,
 			}
+			log.Print("Sending TELEMETRY_ACK:")
 			err = sendMessage(r, messageTypeTelemetryAck, ta)
 			if err != nil {
 				// TODO retry sending the ACK
