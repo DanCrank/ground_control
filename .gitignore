@@ -15,5 +15,6 @@ ground_control
 # secret stuff
 encryption_key.go
 
+.vscode/*
 *.code-workspace
 
