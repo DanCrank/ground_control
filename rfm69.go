@@ -32,7 +32,7 @@ func initRadioEcc1() *rfm69.Radio {
 	// Default != reset value.
 	config[rfm69.RegDioMapping2] = 5 << rfm69.ClkOutShift
 	// Default != reset value.
-	//config[rfm69.RegRssiThresh] = 0xE4
+	config[rfm69.RegRssiThresh] = 0xE4
 	// Make sure enough preamble bytes are sent.
 	config[rfm69.RegPreambleMsb] = 0x00
 	config[rfm69.RegPreambleLsb] = 0x04
@@ -70,14 +70,13 @@ func initRadioEcc1() *rfm69.Radio {
 	config[rfm69.RegPayloadLength] = 64
 	config[rfm69.RegFifoThresh] = rfm69.TxStartFifoNotEmpty | 15<<rfm69.FifoThresholdShift
 	config[rfm69.RegPacketConfig2] = rfm69.AutoRxRestartOn | rfm69.AesOn | 0<<rfm69.InterPacketRxDelayShift
-	// misc settings to match what the rust code did
+	// these values are set to match the magic numbers set by RadioHead on the rover side
+	// this is based on a lookup table that sets them based on the selected bit rate
+	// this table has an air of truthiness, so I am prepared to accept it without question
 	config[rfm69.RegFdevMsb] = 0x01
-	config[rfm69.RegFdevLsb] = 0x38 // rover has 0x3B, working rust code had 0x38...maybe just a typo?
-	//config[rfm69.RegRxBw] = 2<<rfm69.DccFreqShift | rfm69.RxBwMant20 | 4<<rfm69.RxBwExpShift  // RxBwRxBwMant = 0b01 / 20, RxBwExp = 4, this is what the rust code had
-	//config[rfm69.RegAfcBw] = 2<<rfm69.DccFreqShift | rfm69.RxBwMant20 | 4<<rfm69.RxBwExpShift // other sx1231 driver used 0xF4 0xF4
-	config[rfm69.RegRxBw] = 0xEC  // rover has 0xF4, working rust code had 0xEC
-	config[rfm69.RegAfcBw] = 0xEC // rover has 0xF4, working rust code had 0xEC
-	config[rfm69.RegRssiThresh] = 0xFF
+	config[rfm69.RegFdevLsb] = 0x3B
+	config[rfm69.RegRxBw] = 0xF4
+	config[rfm69.RegAfcBw] = 0xF4
 	//r.SetChannelBW(100000) // didn't figure out what this works out to be
 	r.WriteConfiguration(config, true)
 	r.SetFrequency(frequency)

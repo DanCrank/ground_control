@@ -234,6 +234,7 @@ type telemetryMessage struct { // ReceivableMessage
 	location       roverLocData
 	signalStrength int16
 	freeMemory     uint16
+	retries        byte
 	status         string
 }
 
@@ -250,6 +251,9 @@ func (tm *telemetryMessage) deserialize(buf []byte) {
 	start = end
 	end = start + 2
 	tm.freeMemory = deserializeUint16(buf[start:end])
+	start = end
+	end = start + 1
+	tm.retries = buf[start]
 	start = end
 	tm.status = deserializeString(buf[start:])
 }

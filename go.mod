@@ -10,9 +10,9 @@ require (
 	periph.io/x/host/v3 v3.7.2
 )
 
-//replace github.com/DanCrank/rfm69 => /home/ubuntu/rfm69
+//replace github.com/DanCrank/rfm69 => /home/danno/rfm69
 
-require github.com/DanCrank/rfm69 v0.0.4
+require github.com/DanCrank/rfm69 v0.0.5
 
 require (
 	github.com/ecc1/gpio v0.0.0-20200212231225-d40e43fcf8f5 // indirect

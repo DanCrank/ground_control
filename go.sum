@@ -1,5 +1,7 @@
 github.com/DanCrank/rfm69 v0.0.4 h1:OJX42vOFXNWXIa2+LVtoJJh+7LHpAOw4FegTHA6hGNg=
 github.com/DanCrank/rfm69 v0.0.4/go.mod h1:G6R4xGBMFR0Z1HZ7BiDvUGW80bKv/FVUPBUEaG2sWf0=
+github.com/DanCrank/rfm69 v0.0.5 h1:bG2v9yhHVFfigKR06g7KqTgEKcDvU1BjvPZGcA3hq2E=
+github.com/DanCrank/rfm69 v0.0.5/go.mod h1:G6R4xGBMFR0Z1HZ7BiDvUGW80bKv/FVUPBUEaG2sWf0=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/ecc1/gpio v0.0.0-20171107174639-450ac9ea6df7/go.mod h1:LXSJyYdvUHvdCZFUJDqKHv0aRRXrTfZIVlYfBOslPmQ=

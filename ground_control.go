@@ -62,6 +62,10 @@ func main() {
 	r := initRadioEcc1()
 	//defer spiPort.Close()
 	// main loop - receive telemetry packets
+	messageCount := 0
+	groundRssi := 0.0
+	roverRssi := 0.0
+	retries := 0.0
 	for {
 		msgType, buf, rssi, err := receiveMessage(r, telemetryTimeout)
 		if err != nil {
@@ -73,6 +77,16 @@ func main() {
 			log.Printf("RSSI: %d", rssi)
 			tm, err := receiveTelemetryMessage(buf)
 			spew.Dump(tm)
+			// accumulate stats
+			messageCount++
+			if rssi != 0 {
+				groundRssi = ((groundRssi * float64(messageCount-1)) + float64(rssi)) / float64(messageCount)
+			}
+			if tm.signalStrength != 0 {
+				roverRssi = ((roverRssi * float64(messageCount-1)) + float64(tm.signalStrength)) / float64(messageCount)
+			}
+			retries = ((retries * float64(messageCount-1)) + float64(tm.retries)) / float64(messageCount)
+			log.Printf("***Avg ground RSSI: %.2f   Avg rover RSSI: %.2f   Avg retries: %.2f", groundRssi, roverRssi, retries)
 			if err != nil {
 				log.Fatal(err)
 			}
