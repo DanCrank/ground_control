@@ -10,7 +10,7 @@ require (
 	periph.io/x/host/v3 v3.7.2
 )
 
-//replace github.com/DanCrank/rfm69 => /home/danno/rfm69
+replace github.com/DanCrank/rfm69 => /home/danno/rfm69
 
 require github.com/DanCrank/rfm69 v0.0.5
 
